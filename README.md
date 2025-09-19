@@ -1,3 +1,12 @@
+## Equipa
+**Nome do grupo:** _Bolacha Commit_  
+
+**Membros:**
+- José Jarmela — 122663
+- Nuno Neves — 122666
+- Gonçalo Rua — 122678
+- Beatriz Nunes — 122717
+
 # ⚠️ This starter is not recommended ⚠️
 
 **This starter is not recommended for new Vaadin Flow applications. Instead, visit [start.vaadin.com](https://start.vaadin.com/) to configure and download a Vaadin project that reflects the current best practices.**
