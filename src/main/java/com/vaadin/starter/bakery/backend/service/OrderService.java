@@ -29,20 +29,43 @@ import com.vaadin.starter.bakery.backend.data.entity.Product;
 import com.vaadin.starter.bakery.backend.data.entity.User;
 import com.vaadin.starter.bakery.backend.repositories.OrderRepository;
 
+/**
+ * Serviço responsável por operações relacionadas com encomendas.
+ * Fornece métodos para criar, salvar, consultar e atualizar encomendas,
+ * além de gerar estatísticas e dados do dashboard.
+ *
+ * Implementa {@link CrudService} para operações CRUD genéricas.
+ */
 @Service
 public class OrderService implements CrudService<Order> {
 
 	private final OrderRepository orderRepository;
 
+	/**
+	 * Construtor do serviço de encomendas.
+	 *
+	 * @param orderRepository Repositório JPA para acesso aos dados das encomendas.
+	 */
 	@Autowired
 	public OrderService(OrderRepository orderRepository) {
 		super();
 		this.orderRepository = orderRepository;
 	}
 
+	/**
+	 * Conjunto de estados de encomenda que não estão disponíveis para algumas operações.
+	 */
 	private static final Set<OrderState> notAvailableStates = Collections.unmodifiableSet(
 			EnumSet.complementOf(EnumSet.of(OrderState.DELIVERED, OrderState.READY, OrderState.CANCELLED)));
 
+	/**
+	 * Salva uma encomenda existente ou cria uma nova, preenchida pelo {@link BiConsumer} fornecido.
+	 *
+	 * @param currentUser O utilizador que está a realizar a operação.
+	 * @param id ID da encomenda a atualizar; se for {@code null}, será criada uma nova encomenda.
+	 * @param orderFiller Função que preenche os dados da encomenda.
+	 * @return A encomenda salva no repositório.
+	 */
 	@Transactional(rollbackOn = Exception.class)
 	public Order saveOrder(User currentUser, Long id, BiConsumer<User, Order> orderFiller) {
 		Order order;
@@ -55,19 +78,42 @@ public class OrderService implements CrudService<Order> {
 		return orderRepository.save(order);
 	}
 
+	/**
+	 * Salva diretamente uma encomenda existente no repositório.
+	 *
+	 * @param order A encomenda a salvar.
+	 * @return A encomenda salva.
+	 */
 	@Transactional(rollbackOn = Exception.class)
 	public Order saveOrder(Order order) {
 		return orderRepository.save(order);
 	}
 
+	/**
+	 * Adiciona um comentário à encomenda, registando a ação no histórico.
+	 *
+	 * @param currentUser O utilizador que adiciona o comentário.
+	 * @param order A encomenda à qual adicionar o comentário.
+	 * @param comment Texto do comentário.
+	 * @return A encomenda atualizada com o comentário.
+	 */
 	@Transactional(rollbackOn = Exception.class)
 	public Order addComment(User currentUser, Order order, String comment) {
 		order.addHistoryItem(currentUser, comment);
 		return orderRepository.save(order);
 	}
 
+	/**
+	 * Pesquisa encomendas após a data de vencimento opcional, filtrando por texto parcial se fornecido.
+	 *
+	 * @param optionalFilter Filtro de texto parcial no nome do cliente.
+	 * @param optionalFilterDate Filtro de data mínima de vencimento.
+	 * @param pageable Objeto de paginação para limitar resultados.
+	 * @return Página de encomendas que correspondem aos critérios.
+	 */
 	public Page<Order> findAnyMatchingAfterDueDate(Optional<String> optionalFilter,
-			Optional<LocalDate> optionalFilterDate, Pageable pageable) {
+												   Optional<LocalDate> optionalFilterDate,
+												   Pageable pageable) {
 		if (optionalFilter.isPresent() && !optionalFilter.get().isEmpty()) {
 			if (optionalFilterDate.isPresent()) {
 				return orderRepository.findByCustomerFullNameContainingIgnoreCaseAndDueDateAfter(
@@ -83,12 +129,24 @@ public class OrderService implements CrudService<Order> {
 			}
 		}
 	}
-	
+
+	/**
+	 * Retorna todas as encomendas que começam hoje ou posteriormente, como sumário.
+	 *
+	 * @return Lista de {@link OrderSummary} a partir de hoje.
+	 */
 	@Transactional
 	public List<OrderSummary> findAnyMatchingStartingToday() {
 		return orderRepository.findByDueDateGreaterThanEqual(LocalDate.now());
 	}
 
+	/**
+	 * Conta o número de encomendas após a data de vencimento opcional, com filtro de nome do cliente opcional.
+	 *
+	 * @param optionalFilter Filtro de texto parcial no nome do cliente.
+	 * @param optionalFilterDate Filtro de data mínima de vencimento.
+	 * @return Número total de encomendas que correspondem aos critérios.
+	 */
 	public long countAnyMatchingAfterDueDate(Optional<String> optionalFilter, Optional<LocalDate> optionalFilterDate) {
 		if (optionalFilter.isPresent() && optionalFilterDate.isPresent()) {
 			return orderRepository.countByCustomerFullNameContainingIgnoreCaseAndDueDateAfter(optionalFilter.get(),
@@ -102,6 +160,12 @@ public class OrderService implements CrudService<Order> {
 		}
 	}
 
+	/**
+	 * Gera estatísticas de entregas para o dashboard, incluindo encomendas de hoje, amanhã,
+	 * entregues e não disponíveis.
+	 *
+	 * @return Objeto {@link DeliveryStats} com estatísticas atuais.
+	 */
 	private DeliveryStats getDeliveryStats() {
 		DeliveryStats stats = new DeliveryStats();
 		LocalDate today = LocalDate.now();
@@ -116,6 +180,14 @@ public class OrderService implements CrudService<Order> {
 		return stats;
 	}
 
+	/**
+	 * Retorna os dados do dashboard para um determinado mês e ano,
+	 * incluindo estatísticas de entregas, vendas por mês e por produto.
+	 *
+	 * @param month Mês (1-12) para filtrar entregas.
+	 * @param year Ano para filtrar entregas.
+	 * @return Objeto {@link DashboardData} com todos os dados agregados.
+	 */
 	public DashboardData getDashboardData(int month, int year) {
 		DashboardData data = new DashboardData();
 		data.setDeliveryStats(getDeliveryStats());
@@ -127,12 +199,10 @@ public class OrderService implements CrudService<Order> {
 		List<Object[]> sales = orderRepository.sumPerMonthLastThreeYears(OrderState.DELIVERED, year);
 
 		for (Object[] salesData : sales) {
-			// year, month, deliveries
 			int y = year - (int) salesData[0];
 			int m = (int) salesData[1] - 1;
 			if (y == 0 && m == month - 1) {
-				// skip current month as it contains incomplete data
-				continue;
+				continue; // skip current month as it contains incomplete data
 			}
 			long count = (long) salesData[2];
 			salesPerMonth[y][m] = count;
@@ -149,16 +219,39 @@ public class OrderService implements CrudService<Order> {
 		return data;
 	}
 
+	/**
+	 * Cria uma lista com contagem de entregas por dia no mês especificado,
+	 * preenchendo dias sem entregas com {@code null}.
+	 *
+	 * @param month Mês (1-12).
+	 * @param year Ano.
+	 * @return Lista de {@link Number} representando entregas diárias.
+	 */
 	private List<Number> getDeliveriesPerDay(int month, int year) {
 		int daysInMonth = YearMonth.of(year, month).lengthOfMonth();
 		return flattenAndReplaceMissingWithNull(daysInMonth,
 				orderRepository.countPerDay(OrderState.DELIVERED, year, month));
 	}
 
+	/**
+	 * Cria uma lista com contagem de entregas por mês no ano especificado,
+	 * preenchendo meses sem entregas com {@code null}.
+	 *
+	 * @param year Ano.
+	 * @return Lista de {@link Number} representando entregas mensais.
+	 */
 	private List<Number> getDeliveriesPerMonth(int year) {
 		return flattenAndReplaceMissingWithNull(12, orderRepository.countPerMonth(OrderState.DELIVERED, year));
 	}
 
+	/**
+	 * Preenche uma lista de tamanho fixo com contagens extraídas de {@code list},
+	 * substituindo valores ausentes por {@code null}.
+	 *
+	 * @param length Tamanho da lista final.
+	 * @param list Lista de Object[] contendo índice e valor.
+	 * @return Lista de {@link Number} com valores preenchidos.
+	 */
 	private List<Number> flattenAndReplaceMissingWithNull(int length, List<Object[]> list) {
 		List<Number> counts = new ArrayList<>();
 		for (int i = 0; i < length; i++) {
@@ -171,11 +264,22 @@ public class OrderService implements CrudService<Order> {
 		return counts;
 	}
 
+	/**
+	 * Retorna o repositório JPA associado à entidade {@link Order}.
+	 *
+	 * @return Repositório JPA de encomendas.
+	 */
 	@Override
 	public JpaRepository<Order, Long> getRepository() {
 		return orderRepository;
 	}
 
+	/**
+	 * Cria uma nova encomenda com valores padrão de data e hora de entrega.
+	 *
+	 * @param currentUser Utilizador que cria a encomenda.
+	 * @return Nova instância de {@link Order}.
+	 */
 	@Override
 	@Transactional
 	public Order createNew(User currentUser) {
